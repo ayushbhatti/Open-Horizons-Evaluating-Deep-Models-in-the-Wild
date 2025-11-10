@@ -3,7 +3,7 @@ import torch, numpy as np
 import torch.nn.functional as F
 from sklearn.covariance import EmpiricalCovariance
 from sklearn.neighbors import NearestNeighbors
-from .training import extract_features
+from .Training import extract_features
 
 def msp_scores(logits): return -F.softmax(logits,dim=1).max(1)[0].numpy()
 def energy_scores(logits,T=1.0): return torch.logsumexp(logits/T,dim=1).numpy()
