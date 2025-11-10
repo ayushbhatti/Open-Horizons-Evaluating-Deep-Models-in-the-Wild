@@ -16,8 +16,11 @@ from Utils.misc import set_seed
 
 
 def main():
-    print("🚀 Starting OSR training pipeline...")  # ✅ visible sanity print
+    print("🚀 Starting OSR training pipeline...")
 
+    # ------------------------------
+    # Argument parser
+    # ------------------------------
     parser = argparse.ArgumentParser()
     parser.add_argument("--known-classes", type=int, default=6)
     parser.add_argument("--backbone", type=str, default="resnet50")
@@ -27,35 +30,63 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
-    set_seed(args.seed)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"✅ Using device: {device}")
+    # ------------------------------
+    # Device selection (MPS / CUDA / CPU)
+    # ------------------------------
+    try:
+        if torch.backends.mps.is_available():
+            device = "mps"
+            print("✅ Using Apple MPS GPU for acceleration.")
+        elif torch.cuda.is_available():
+            device = "cuda"
+            print("✅ Using NVIDIA CUDA GPU.")
+        else:
+            device = "cpu"
+            print("⚠️ Using CPU (no GPU backend found).")
+    except Exception as e:
+        print(f"⚠️ MPS initialization failed, falling back to CPU: {e}")
+        device = "cpu"
 
-    # --- Load CIFAR-10 data ---
-    print("📦 Loading CIFAR-10 dataset...")
+    print(f"💻 Active device: {device}")
+    set_seed(args.seed)
+
+    # ------------------------------
+    # Load CIFAR-10 data
+    # ------------------------------
+    print("\n📦 Loading CIFAR-10 dataset...")
     tr_loader, te_id_loader, te_ood_loader, known, unknown = get_cifar10_loaders(args.known_classes, args.batch_size)
     print(f"Known classes: {known}, Unknown classes: {unknown}")
 
-    # --- Build frozen feature extractor ---
+    # ------------------------------
+    # Build frozen feature extractor
+    # ------------------------------
     backbone, feat_dim = build_backbone(args.backbone)
     backbone.to(device).eval()
     print(f"🧠 Loaded backbone: {args.backbone} (feature dim = {feat_dim})")
 
-    # --- Train linear head ---
-    print("🎯 Training linear head...")
+    # ------------------------------
+    # Train linear head
+    # ------------------------------
+    print(f"\n🎯 Training linear head on device: {device} ...")
     head = train_linear(backbone, feat_dim, tr_loader, len(known), device, epochs=args.epochs, lr=args.lr)
 
-    # --- Extract logits/features for ID and OOD sets ---
-    print("🔍 Extracting logits and features...")
+    # ------------------------------
+    # Extract logits/features
+    # ------------------------------
+    print(f"\n🔍 Extracting logits and features on device: {device} ...")
     id_logits, id_feats = logits_on_loader(backbone, head, te_id_loader, device)
     ood_logits, ood_feats = logits_on_loader(backbone, head, te_ood_loader, device)
 
-    # --- Compute OSR scores ---
-    print("📈 Computing OSR scores (MSP, Energy, Mahalanobis, kNN)...")
+    # ------------------------------
+    # Compute OSR scores
+    # ------------------------------
+    print("\n📈 Computing OSR scores (MSP, Energy, Mahalanobis, kNN)...")
     scores = compute_all_scores(backbone, tr_loader, id_logits, id_feats, ood_logits, ood_feats, device)
 
-    # --- Evaluate ---
-    print("📊 Evaluating OSR metrics...")
+    # ------------------------------
+    # Evaluate metrics
+    # ------------------------------
+    print("\n📊 Evaluating OSR metrics...")
     evaluate_osr(scores, id_logits, te_id_loader, ood_logits)
 
     print("\n✅ Done! Results printed above.")
