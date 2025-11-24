@@ -32,7 +32,7 @@ def main():
 
     # ------------------------------
     # Device selection (MPS / CUDA / CPU)
-    # ------------------------------
+    # -----------------------------
     try:
         if torch.backends.mps.is_available():
             device = "mps"
