@@ -68,7 +68,6 @@ outputs/
 runs/
 wandb/
 tensorboard/
-*.csv
 *.txt
 !requirements.txt
 !README.txt
