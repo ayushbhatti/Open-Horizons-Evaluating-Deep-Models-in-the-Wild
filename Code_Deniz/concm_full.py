@@ -152,7 +152,8 @@ class DynamicStructureMatching(nn.Module):
             projected = self.projector(prototype)
         if was_training:
             self.projector.train()
-        self.structural_anchors[class_id] = projected.detach()
+        # Store as [geom_dim] not [1, geom_dim]
+        self.structural_anchors[class_id] = projected.squeeze(0).detach()
 
     def align_features(self, features, labels, temperature=0.07):
         """
@@ -163,26 +164,30 @@ class DynamicStructureMatching(nn.Module):
             labels: Class labels [B]
             temperature: Temperature for contrastive loss
         Returns:
-            Alignment loss
+            Alignment loss (returns 0 if no anchors initialized)
         """
-        projected = self.projector(features)
+        # Return zero loss if no anchors initialized yet
+        if len(self.structural_anchors) == 0:
+            return torch.tensor(0.0, device=features.device)
 
-        # Get anchor prototypes
+        projected = self.projector(features)  # [B, geom_dim]
+
+        # Get anchor prototypes [num_classes, geom_dim]
         anchor_ids = sorted(self.structural_anchors.keys())
         anchors = torch.stack([self.structural_anchors[i] for i in anchor_ids], dim=0)
 
-        # Compute similarities
+        # Compute similarities [B, num_classes]
         sim = torch.matmul(projected, anchors.t()) / temperature
 
-        # Create target mask
-        target = torch.zeros_like(sim)
+        # Create target labels
+        target = torch.zeros(features.size(0), dtype=torch.long, device=features.device)
         for i, label in enumerate(labels):
             if int(label) in anchor_ids:
                 idx = anchor_ids.index(int(label))
-                target[i, idx] = 1.0
+                target[i] = idx
 
-        # Contrastive loss
-        loss = F.cross_entropy(sim, target.argmax(dim=1))
+        # Cross entropy loss
+        loss = F.cross_entropy(sim, target)
 
         return loss
 

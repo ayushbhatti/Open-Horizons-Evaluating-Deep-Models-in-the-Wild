@@ -139,6 +139,21 @@ def train_base(
     else:
         base_targets, all_targets = None, None
 
+    # Initialize CONCM_FULL base memory before training
+    if strategy == "CONCM_FULL" and concm_framework is not None:
+        print("🔧 Initializing ConCM base memory from training data...")
+        with torch.no_grad():
+            all_feats, all_labels = [], []
+            for x, y in loader:
+                x, y = x.to(DEVICE), y.to(DEVICE)
+                feats = encoder(x)
+                all_feats.append(feats)
+                all_labels.append(y)
+            all_feats = torch.cat(all_feats, dim=0)
+            all_labels = torch.cat(all_labels, dim=0)
+            concm_framework.train_base_session(encoder, all_feats, all_labels)
+        print("✓ ConCM base memory initialized")
+
     for e in range(EPOCHS):
         running, correct, total = 0.0, 0, 0
         for x, y in loader:
@@ -184,20 +199,6 @@ def train_base(
             total += ce_labels.size(0)
         sched.step()
         acc = 100.0 * correct / total
-
-        # Initialize CONCM_FULL base memory after first epoch
-        if strategy == "CONCM_FULL" and concm_framework is not None and e == 0:
-            print("   Initializing ConCM base memory...")
-            with torch.no_grad():
-                all_feats, all_labels = [], []
-                for x, y in loader:
-                    x, y = x.to(DEVICE), y.to(DEVICE)
-                    feats = encoder(x)
-                    all_feats.append(feats)
-                    all_labels.append(y)
-                all_feats = torch.cat(all_feats, dim=0)
-                all_labels = torch.cat(all_labels, dim=0)
-                concm_framework.train_base_session(encoder, all_feats, all_labels)
 
         if acc > best_acc:
             best_acc = acc
