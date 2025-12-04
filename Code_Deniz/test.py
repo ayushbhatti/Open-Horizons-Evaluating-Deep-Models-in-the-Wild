@@ -17,6 +17,7 @@ from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix
+from sklearn.decomposition import PCA
 
 from model import ResNet50Encoder, LinearClassifier
 from concm_full import ConCMFramework
@@ -73,8 +74,19 @@ def few_shot_indices(dataset, target_class, k_shot):
 
 
 @torch.no_grad()
-def compute_prototypes(encoder, dataset, class_list, batch_size=256, device="cuda"):
-    """Compute prototypes for given classes"""
+def compute_prototypes(
+    encoder, dataset, class_list, batch_size=256, device="cuda", normalize=True
+):
+    """Compute prototypes for given classes
+
+    Args:
+        encoder: Feature encoder
+        dataset: Dataset to compute prototypes from
+        class_list: List of class IDs to compute prototypes for
+        batch_size: Batch size for data loading
+        device: Device to use
+        normalize: Whether to L2 normalize prototypes (default True for compatibility)
+    """
     encoder.eval()
     loader = DataLoader(
         dataset, batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True
@@ -95,7 +107,10 @@ def compute_prototypes(encoder, dataset, class_list, batch_size=256, device="cud
     protos = OrderedDict()
     for c in class_list:
         if counts[c] > 0:
-            protos[c] = F.normalize((feat_sums[c] / counts[c]).unsqueeze(0), dim=1)
+            proto = (feat_sums[c] / counts[c]).unsqueeze(0)
+            if normalize:
+                proto = F.normalize(proto, dim=1)
+            protos[c] = proto
     return protos
 
 
@@ -336,6 +351,136 @@ def plot_per_class_accuracy(cm, class_list, strategy, kshot, output_dir):
     print(f"✓ Saved per-class accuracy: {save_path}")
 
 
+def plot_session_comparison(base_acc_s0, base_acc_s1, novel_acc, overall_acc_s1, strategy, kshot, output_dir):
+    """Plot session comparison showing performance before and after incremental learning"""
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    sessions = ['Session 0\n(Base Only)', 'Session 1\n(After Increment)']
+    x = np.arange(len(sessions))
+    width = 0.25
+    
+    bars1 = ax.bar(x - width, [base_acc_s0, base_acc_s1], width,
+                   label='Base (7)', color='#3498db', alpha=0.8)
+    bars2 = ax.bar(x, [0, novel_acc], width,
+                   label='Incremental (3)', color='#e74c3c', alpha=0.8)
+    bars3 = ax.bar(x + width, [base_acc_s0, overall_acc_s1], width,
+                   label='Overall', color='#2ecc71', alpha=0.8)
+    
+    ax.set_ylabel('Accuracy (%)', fontsize=13, fontweight='bold')
+    ax.set_title(f'Session Comparison - {strategy} ({kshot}-shot)', fontsize=14, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(sessions)
+    ax.legend()
+    ax.grid(axis='y', alpha=0.3)
+    ax.set_ylim([0, 105])
+    
+    for bars in [bars1, bars2, bars3]:
+        for bar in bars:
+            height = bar.get_height()
+            if height > 0:
+                ax.text(bar.get_x() + bar.get_width()/2., height + 1,
+                       f'{height:.1f}%', ha='center', va='bottom',
+                       fontsize=9, fontweight='bold')
+    
+    plt.tight_layout()
+    save_path = os.path.join(
+        output_dir, f"session_comparison_{strategy}_{kshot}shot.png"
+    )
+    plt.savefig(save_path, dpi=150)
+    plt.close()
+    print(f"✓ Saved session comparison: {save_path}")
+
+
+def plot_prototype_distribution(proto_bank, class_list, strategy, kshot, output_dir, device="cuda"):
+    """Plot prototype distribution using PCA visualization"""
+    if len(proto_bank) == 0:
+        return
+    
+    # Extract prototypes in order
+    proto_list = []
+    proto_classes = []
+    for cls in class_list:
+        if cls in proto_bank:
+            proto_list.append(proto_bank[cls].cpu().numpy())
+            proto_classes.append(cls)
+    
+    if len(proto_list) == 0:
+        return
+    
+    # Stack prototypes
+    all_prototypes = np.vstack(proto_list)
+    
+    # Apply PCA
+    if all_prototypes.shape[1] < 2:
+        print("⚠️  Prototype dimension too small for PCA visualization")
+        return
+    
+    pca = PCA(n_components=2)
+    protos_2d = pca.fit_transform(all_prototypes)
+    
+    display_names = [CLASS_NAMES[i] for i in proto_classes]
+    
+    plt.figure(figsize=(14, 10))
+    
+    # Plot base classes
+    base_indices = [i for i, cls in enumerate(proto_classes) if cls in BASE_CLASSES]
+    for idx in base_indices:
+        plt.scatter(
+            protos_2d[idx, 0], protos_2d[idx, 1],
+            c='#3498db', marker='o', s=400,
+            edgecolors='black', linewidths=2.5, alpha=0.8, zorder=3,
+            label='Base' if idx == base_indices[0] else ''
+        )
+    
+    # Plot incremental classes
+    inc_indices = [i for i, cls in enumerate(proto_classes) if cls in NEW_CLASSES]
+    for idx in inc_indices:
+        plt.scatter(
+            protos_2d[idx, 0], protos_2d[idx, 1],
+            c='#e74c3c', marker='^', s=500,
+            edgecolors='black', linewidths=2.5, alpha=0.8, zorder=3,
+            label='Incremental' if idx == inc_indices[0] else ''
+        )
+    
+    # Annotate with class names
+    for i, (x, y) in enumerate(protos_2d):
+        is_incremental = proto_classes[i] in NEW_CLASSES
+        plt.annotate(
+            display_names[i], (x, y),
+            fontsize=12, ha='center',
+            va='top' if not is_incremental else 'bottom',
+            fontweight='bold',
+            bbox=dict(
+                boxstyle='round,pad=0.3',
+                facecolor='yellow' if is_incremental else 'lightblue',
+                alpha=0.7, edgecolor='black'
+            )
+        )
+    
+    plt.xlabel(
+        f'PC1 ({pca.explained_variance_ratio_[0]*100:.1f}%)',
+        fontsize=12, fontweight='bold'
+    )
+    plt.ylabel(
+        f'PC2 ({pca.explained_variance_ratio_[1]*100:.1f}%)',
+        fontsize=12, fontweight='bold'
+    )
+    plt.title(
+        f'Prototype Distribution - {strategy} ({kshot}-shot)',
+        fontsize=14, fontweight='bold'
+    )
+    plt.grid(True, alpha=0.3)
+    plt.legend(fontsize=12)
+    plt.tight_layout()
+    
+    save_path = os.path.join(
+        output_dir, f"prototype_distribution_{strategy}_{kshot}shot.png"
+    )
+    plt.savefig(save_path, dpi=150)
+    plt.close()
+    print(f"✓ Saved prototype distribution: {save_path}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Test CIFAR-10 FSCIL Model")
     parser.add_argument(
@@ -499,6 +644,33 @@ def main():
     )
     print(f"📊 Base Classes Accuracy: {base_acc_s0:.2f}%")
 
+    # Initialize CONCM_FULL base_memory and DSM structural anchors if needed
+    if args.strategy == "CONCM_FULL" and concm_framework is not None:
+        # Compute unnormalized prototypes for base_memory (matching training)
+        # During training, base_memory uses unnormalized prototypes
+        base_protos_unnorm = compute_prototypes(
+            encoder, base_train, BASE_CLASSES, device=DEVICE, normalize=False
+        )
+
+        # Initialize base_memory with unnormalized prototypes (matching train_base_session)
+        base_proto_list = [base_protos_unnorm[c].to(DEVICE) for c in BASE_CLASSES]
+        concm_framework.base_memory = torch.cat(base_proto_list, dim=0)
+
+        # Initialize DSM structural anchors for base classes (matching train_base_session)
+        concm_framework.eval()
+        with torch.no_grad():
+            for c in BASE_CLASSES:
+                concm_framework.dsm.update_structure(
+                    c, base_protos_unnorm[c].to(DEVICE)
+                )
+
+        print(
+            f"✓ Initialized ConCM base_memory with {len(BASE_CLASSES)} base prototypes (unnormalized)"
+        )
+        print(
+            f"✓ Initialized DSM structural anchors for {len(BASE_CLASSES)} base classes"
+        )
+
     # ============================================================================
     # Session 1: Incremental Learning (or Baseline Evaluation)
     # ============================================================================
@@ -653,21 +825,58 @@ def main():
             cm, seen_classes, args.strategy, args.k_shot, args.output_dir
         )
 
+        # Plot session comparison
+        plot_session_comparison(
+            base_acc_s0, base_acc_s1, novel_acc, overall_acc,
+            args.strategy, args.k_shot, args.output_dir
+        )
+
+        # Plot prototype distribution
+        plot_prototype_distribution(
+            proto_bank, seen_classes, args.strategy, args.k_shot, args.output_dir, device=DEVICE
+        )
+
         # Per-class analysis
         per_class_acc = cm.diagonal() / (cm.sum(axis=1) + 1e-12) * 100
         base_accs = per_class_acc[: len(BASE_CLASSES)]
         inc_accs = per_class_acc[len(BASE_CLASSES) :]
 
         print(f"\n📊 Per-Class Accuracy:")
-        print(f"{'Class':<15} {'Type':<12} {'Accuracy':<12}")
-        print("-" * 40)
+        print(f"{'Class':<15} {'Type':<12} {'Accuracy':<12} {'Samples':<10}")
+        print("-" * 50)
         for i, cls in enumerate(seen_classes):
             class_type = "Base" if cls in BASE_CLASSES else "Incremental"
-            print(f"{CLASS_NAMES[cls]:<15} {class_type:<12} {per_class_acc[i]:>10.2f}%")
-        print("-" * 40)
+            samples = cm[i].sum()
+            print(f"{CLASS_NAMES[cls]:<15} {class_type:<12} {per_class_acc[i]:>10.2f}% {int(samples):<10}")
+        print("-" * 50)
         print(f"{'Base Avg':<15} {'Summary':<12} {np.mean(base_accs):>10.2f}%")
         print(f"{'Inc Avg':<15} {'Summary':<12} {np.mean(inc_accs):>10.2f}%")
         print(f"{'Overall':<15} {'Summary':<12} {np.mean(per_class_acc):>10.2f}%")
+
+        # Save confusion matrix as CSV
+        display_names = [CLASS_NAMES[i] for i in seen_classes]
+        cm_df = pd.DataFrame(
+            cm,
+            index=display_names,
+            columns=display_names
+        )
+        cm_csv_path = os.path.join(
+            args.output_dir, f"confusion_matrix_{args.strategy}_{args.k_shot}shot.csv"
+        )
+        cm_df.to_csv(cm_csv_path)
+        print(f"\n✓ Saved confusion matrix to: {cm_csv_path}")
+
+        # Save normalized confusion matrix as CSV
+        cm_norm_df = pd.DataFrame(
+            cm_normalized,
+            index=display_names,
+            columns=display_names
+        )
+        cm_norm_csv_path = os.path.join(
+            args.output_dir, f"confusion_matrix_normalized_{args.strategy}_{args.k_shot}shot.csv"
+        )
+        cm_norm_df.to_csv(cm_norm_csv_path)
+        print(f"✓ Saved normalized confusion matrix to: {cm_norm_csv_path}")
 
     # ============================================================================
     # Save results
@@ -702,8 +911,13 @@ def main():
     print("TESTING COMPLETE!")
     print("=" * 70)
     print(f"\n📁 All results saved to: {args.output_dir}/")
+    print(f"   • session_comparison_{args.strategy}_{args.k_shot}shot.png")
     print(f"   • confusion_matrix_{args.strategy}_{args.k_shot}shot.png")
+    print(f"   • confusion_matrix_{args.strategy}_{args.k_shot}shot.csv")
+    print(f"   • confusion_matrix_normalized_{args.strategy}_{args.k_shot}shot.csv")
     print(f"   • per_class_accuracy_{args.strategy}_{args.k_shot}shot.png")
+    if cm is not None:
+        print(f"   • prototype_distribution_{args.strategy}_{args.k_shot}shot.png")
     print(f"   • results_{args.strategy}_{args.k_shot}shot.txt")
     print("=" * 70)
 
