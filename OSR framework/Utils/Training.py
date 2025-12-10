@@ -36,7 +36,7 @@ def extract_features(backbone, loader, device):
     feats = torch.cat(feats)
     labels = torch.cat(labels)
 
-    log_stage(f"✅ Feature extraction complete: {feats.shape[0]} samples, dim={feats.shape[1]}")
+    log_stage(f" Feature extraction complete: {feats.shape[0]} samples, dim={feats.shape[1]}")
     return feats, labels
 
 
@@ -76,7 +76,7 @@ def train_linear(backbone, feat_dim, tr_loader, num_classes, device,
         avg_loss = np.mean(losses)
         log_progress(f"Epoch {ep+1}/{epochs} finished — avg loss: {avg_loss:.4f}")
 
-    log_stage("✅ Linear head training complete.")
+    log_stage(" Linear head training complete.")
     return head
 
 
@@ -101,5 +101,5 @@ def logits_on_loader(backbone, head, loader, device):
         logits.append(z.cpu())
         feats.append(f.cpu())
 
-    log_stage("✅ Logit extraction complete.")
+    log_stage(" Logit extraction complete.")
     return torch.cat(logits), torch.cat(feats)
