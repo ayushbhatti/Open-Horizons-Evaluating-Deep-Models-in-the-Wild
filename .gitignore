@@ -1,4 +1,6 @@
+############################
 # Python
+############################
 *.py[cod]
 *$py.class
 *.so
@@ -23,14 +25,18 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+############################
 # Virtual Environments
+############################
 venv/
 ENV/
 env/
-.venv
+.venv/
 .env
 
-# PyTorch / Machine Learning
+############################
+# PyTorch / ML Artifacts
+############################
 *.pt
 *.pth
 *.pkl
@@ -38,17 +44,20 @@ env/
 *.h5
 *.ckpt
 *.pb
+*.onnx
+*.tflite
 checkpoints/
 checkpoints_*/
 *.caffemodel
 *.npy
 *.npz
 
-# Data directories
-data/
+############################
+# Datasets (IGNORE RAW DATA)
+############################
+/data/
 dataset/
 datasets/
-Data/
 CIFAR*/
 cifar*/
 MNIST/
@@ -58,7 +67,13 @@ mnist/
 *.tar
 *.gz
 
-# Logs and Results
+# Ignore raw subfolders but KEEP data loader code
+Data/raw/
+Data/datasets/
+
+############################
+# Logs & Outputs
+############################
 logs/
 log/
 *.log
@@ -68,134 +83,77 @@ outputs/
 runs/
 wandb/
 tensorboard/
+plots/
+
+############################
+# Text files (keep key ones)
+############################
 *.txt
 !requirements.txt
 !README.txt
+!Results.txt
 
-# Jupyter Notebook
+############################
+# Jupyter
+############################
 .ipynb_checkpoints/
-*.ipynb_checkpoints
 *.ipynb
 
+############################
 # IDEs
+############################
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-.DS_Store
 *.sublime-project
 *.sublime-workspace
 
+############################
 # OS
-Thumbs.db
+############################
 .DS_Store
+Thumbs.db
 .AppleDouble
 .LSOverride
 ._*
 
-# pytest
+############################
+# Testing / Coverage
+############################
 .pytest_cache/
 .coverage
 htmlcov/
 .tox/
-
-# MyPy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre
-.pyre/
-
-# pytype
-.pytype/
-
-# Profiling
-*.prof
-
-# Images and Videos (optional - uncomment if you don't want to track these)
-# *.png
-# *.jpg
-# *.jpeg
-# *.gif
-# *.mp4
-# *.avi
-
-# Saved models and large files
-*.onnx
-*.tflite
-
-# Temporary files
-tmp/
-temp/
-*.tmp
-*.bak
-*.swp
-
-# Documentation builds
-docs/_build/
-site/
-
-# Distribution / packaging
-.Python
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
 .nox/
-.coverage
-.coverage.*
 .cache
-nosetests.xml
 coverage.xml
 *.cover
 *.py,cover
 .hypothesis/
 
-# Translations
-*.mo
-*.pot
-
-# Sphinx documentation
+############################
+# Documentation
+############################
 docs/_build/
+site/
 
-# PyBuilder
-.pybuilder/
-target/
-
-# pyenv
-.python-version
-
-# Celery
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
+############################
 # Project-specific
+############################
 pre/
 assets/
 figures/
 params/
+tmp/
+temp/
 
+############################
 # Keep important files
+############################
 !*.md
 !*.sh
 !*.json
 !requirements.txt
 !LICENSE
-
